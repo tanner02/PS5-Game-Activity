@@ -1,7 +1,8 @@
-name: Publish PS5 Game Activity
+name: Publish release
 on:
   push:
-    branches: ['release/v0.1.0']
+    branches: [main]
+    paths: [releases/v0.2.0/**]
 permissions:
   contents: write
 jobs:
@@ -9,8 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - run: sha256sum -c SHA256SUMS
-      - name: Publish verified PS5 ELF
-        env:
+      - run: cd releases/v0.2.0 && sha256sum -c SHA256SUMS
+      - env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create v0.1.0 --target 145c19a3191695ca9f6d17f22003e323a71d1526 --title 'PS5 Game Activity v0.1.0' --notes-file RELEASE.md ps5-game-activity.elf SHA256SUMS
+        run: gh release create v0.2.0 --target 280188b48de815226cae7d25c5158f6090809c36 --title 'PS5 Game Activity v0.2.0' --notes 'Automatic PS4/PS5 artwork lookup, smaller ELF, and a named process.' releases/v0.2.0/ps5-game-activity.elf releases/v0.2.0/SHA256SUMS
