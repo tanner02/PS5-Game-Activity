@@ -18,6 +18,37 @@ constexpr std::size_t page_limit = 2 * 1024 * 1024;
 constexpr std::string_view ps4_image_prefix =
     "https://gs2-sec.ww.prod.dl.playstation.net/gs2-sec/appkgo/prod/";
 
+std::string patch_icon(const GameArtwork::Fetch &fetch, const std::string &id) {
+  const std::string host = id.starts_with("CUSA") ? "orbispatches.com" : "prosperopatches.com";
+  const auto prefix = "https://cdn." + host + "/titles/" + id + "_";
+  constexpr std::string_view suffix = "/icon0.webp";
+  const auto length = prefix.size() + 64 + suffix.size();
+  const auto valid = [&](std::string_view url) {
+    return url.size() == length && url.starts_with(prefix) && url.ends_with(suffix) &&
+        url.substr(prefix.size(), 64).find_first_not_of("0123456789abcdefABCDEF") == url.npos;
+  };
+  try {
+    const auto data = Json::parse(fetch("https://" + host + "/api/lookup?titleid=" + id), nullptr, false);
+    if (data.is_object() && data.value("success", Json()) == true) {
+      const auto metadata = data.find("metadata");
+      if (metadata != data.end() && metadata->is_object()) {
+        const auto icon = metadata->value("icon", Json());
+        if (icon.is_string() && valid(icon.get_ref<const std::string &>()))
+          return icon.get<std::string>();
+      }
+    }
+  } catch (const std::exception &) {
+    // The public title page can still supply artwork when the lookup API fails.
+  }
+  const auto page = fetch("https://" + host + "/" + id);
+  const auto at = page.find(prefix);
+  if (at != page.npos) {
+    const auto candidate = std::string_view(page).substr(at, length);
+    if (valid(candidate)) return std::string(candidate);
+  }
+  return {};
+}
+
 std::string ps4_metadata_url(std::string_view id) {
   if (!is_game_title_id(id) || !id.starts_with("CUSA")) return {};
   const auto np_title = std::string(id) + "_00";
@@ -152,15 +183,18 @@ bool public_game_image_url(std::string_view url) {
            (c >= '0' && c <= '9') || std::string_view(":/._-?=&%+~").find(c) != std::string_view::npos;
   });
 }
-std::string game_store_url(const GameTitle &game) {
-  if (digits(game.concept_id))
-    return "https://store.playstation.com/en-us/concept/" + game.concept_id;
+static std::string game_product_url(const GameTitle &game) {
   if (!content_id(game)) return {};
   // Product IDs are regional; never guess a different title/edition ID.
   const auto region = game.content_id.substr(0, 2);
   const char *locale = region == "EP" ? "en-gb" : region == "HP" ? "en-hk" :
                        region == "JP" ? "ja-jp" : region == "UP" ? "en-us" : nullptr;
   return locale ? "https://store.playstation.com/" + std::string(locale) + "/product/" + game.content_id : "";
+}
+std::string game_store_url(const GameTitle &game) {
+  if (digits(game.concept_id))
+    return "https://store.playstation.com/en-us/concept/" + game.concept_id;
+  return game_product_url(game);
 }
 std::string parse_game_store_image(std::string_view page, const GameTitle &game) {
   if (page.size() > page_limit) return {};
@@ -200,8 +234,11 @@ std::string parse_game_store_image(std::string_view page, const GameTitle &game)
 GameArtwork::GameArtwork(Fetch fetch, const std::string &cache_path) : fetch_(std::move(fetch)) {
   for (auto &[key, image] : read_manifest(cache_path))
     cache_[key] = {std::move(image), std::numeric_limits<std::uint64_t>::max()};
+  patches_ = !fetch_;
   if (!fetch_) fetch_ = [](const std::string &url) {
-    auto response = https("GET", url, {}, {}, {}, 3000, page_limit);
+    const bool patch_site = url.starts_with("https://orbispatches.com/") ||
+                            url.starts_with("https://prosperopatches.com/");
+    auto response = https("GET", url, {}, {}, {}, patch_site ? 8000 : 3000, page_limit);
     return response.status == 200 ? std::move(response.body) : std::string();
   };
 }
@@ -213,7 +250,7 @@ GameArtwork::~GameArtwork() {
 std::string GameArtwork::image(const GameTitle &game) {
   if (!is_game_title_id(game.title_id)) return {};
   const auto store_url = game_store_url(game);
-  const auto key = game.title_id.starts_with("CUSA") ? game.title_id : store_url;
+  const auto key = patches_ || game.title_id.starts_with("CUSA") ? game.title_id : store_url;
   std::lock_guard lock(mutex_);
   if (const auto it = cache_.find(game.title_id);
       it != cache_.end() && it->second.expires == std::numeric_limits<std::uint64_t>::max())
@@ -242,11 +279,14 @@ void GameArtwork::run() {
     pending_.reset();
     const auto store_url = game_store_url(game);
     const bool ps4 = game.title_id.starts_with("CUSA");
-    active_ = ps4 ? game.title_id : store_url;
+    active_ = patches_ || ps4 ? game.title_id : store_url;
     const auto key = active_;
     lock.unlock();
     std::string image;
-    if (ps4) {
+    if (patches_) {
+      try { image = patch_icon(fetch_, game.title_id); } catch (...) { }
+    }
+    if (image.empty() && ps4) {
       try {
         const auto url = ps4_metadata_url(game.title_id);
         if (!url.empty()) image = ps4_metadata_image(fetch_(url), game.title_id);
@@ -254,6 +294,12 @@ void GameArtwork::run() {
     }
     if (image.empty() && !store_url.empty()) {
       try { image = parse_game_store_image(fetch_(store_url), game); } catch (...) { }
+    }
+    if (image.empty() && digits(game.concept_id)) {
+      const auto product_url = game_product_url(game);
+      if (!product_url.empty()) {
+        try { image = parse_game_store_image(fetch_(product_url), game); } catch (...) { }
+      }
     }
     lock.lock();
     // Reserve room for up to 32 seeded covers plus 32 online results. Offline

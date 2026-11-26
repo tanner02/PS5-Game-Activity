@@ -13,6 +13,9 @@
 #include <poll.h>
 #include <sstream>
 #include <sys/socket.h>
+#ifdef PBS_PS5
+#include <sys/thr.h>
+#endif
 #include <unistd.h>
 
 namespace {
@@ -122,6 +125,8 @@ int main(int argc, char **argv) {
     std::signal(SIGTERM, [](int) { stopping = 1; });
     pbsd::initialize_platform_random();
 #ifdef PBS_PS5
+    if (thr_set_name(-1, "ps5activity.elf") != 0)
+      std::perror("Could not set PS5 Game Activity task name");
     const std::string directory = "/data/ps5-game-activity";
 #else
     const std::string directory = argc > 1 ? argv[1] : "./game-activity-data";

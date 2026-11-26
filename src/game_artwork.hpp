@@ -24,6 +24,7 @@ public:
 private:
   struct Entry { std::string image; std::uint64_t expires; };
   Fetch fetch_;
+  bool patches_{};
   std::mutex mutex_;
   std::condition_variable changed_;
   std::map<std::string, Entry> cache_;
