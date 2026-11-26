@@ -1,0 +1,16 @@
+name: Publish PS5 Game Activity
+on:
+  push:
+    branches: ['release/v0.1.0']
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: sha256sum -c SHA256SUMS
+      - name: Publish verified PS5 ELF
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create v0.1.0 --target 145c19a3191695ca9f6d17f22003e323a71d1526 --title 'PS5 Game Activity v0.1.0' --notes-file RELEASE.md ps5-game-activity.elf SHA256SUMS
