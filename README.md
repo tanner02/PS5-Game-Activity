@@ -18,4 +18,4 @@ cmake --build build
 
 For a host build, omit the toolchain and dependency prefix arguments and install host OpenSSL and nlohmann/json development packages. For optional offline artwork, run the artwork cache script with `--output-dir /data/ps5-game-activity`.
 
-This project uses code from [PBS-Cord](https://github.com/tanner02/PBS-Cord). See [LICENSE](LICENSE) and the included notices for OpenSSL, libsodium, the CA bundle and the QR generator.
+See [LICENSE](LICENSE) and the included notices for OpenSSL, libsodium, the CA bundle and the QR generator.
