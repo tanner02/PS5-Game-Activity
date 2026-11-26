@@ -2,7 +2,7 @@ name: Publish release
 on:
   push:
     branches: [main]
-    paths: [releases/v0.2.0/**]
+    paths: [releases/v0.2.0/**, .github/workflows/publish.yml]
 permissions:
   contents: write
 jobs:
@@ -13,4 +13,4 @@ jobs:
       - run: cd releases/v0.2.0 && sha256sum -c SHA256SUMS
       - env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create v0.2.0 --target 280188b48de815226cae7d25c5158f6090809c36 --title 'PS5 Game Activity v0.2.0' --notes 'Automatic PS4/PS5 artwork lookup, smaller ELF, and a named process.' releases/v0.2.0/ps5-game-activity.elf releases/v0.2.0/SHA256SUMS
+        run: gh release create v0.2.0 --target "$GITHUB_SHA" --title 'PS5 Game Activity v0.2.0' --notes 'Automatic PS4/PS5 artwork lookup, smaller ELF, and a named process.' releases/v0.2.0/ps5-game-activity.elf releases/v0.2.0/SHA256SUMS
