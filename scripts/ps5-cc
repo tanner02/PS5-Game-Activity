@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+: "${PS5_PAYLOAD_SDK:?Set PS5_PAYLOAD_SDK to the SDK directory (a Linux/WSL path)}"
+sdk="$(realpath "$PS5_PAYLOAD_SDK")"
+compiler="${PS5_CLANG:-/usr/bin/clang}"
+args=(--target=x86_64-unknown-freebsd12.0 "--sysroot=$sdk"
+      -fno-stack-protector -fno-plt -femulated-tls -fPIC -D__NO_TLS)
+# SDK libc implements __getCurrentRuneLocale rather than _ThreadRuneLocale;
+# __NO_TLS selects that supported path in the SDK's runetype.h.
+link=true
+cxx=false
+[[ "${PS5_COMPILE_CXX:-0}" == 1 ]] && cxx=true
+for arg in "$@"; do
+    case "$arg" in -c|-E|-S|-fsyntax-only|--version|-dumpmachine|-dumpversion) link=false;; esac
+done
+if "$cxx"; then
+    compiler="${PS5_CLANGXX:-/usr/bin/clang++}"
+    args+=(-nostdinc++ -isystem "$sdk/target/include/c++/v1" -frtti -fexceptions)
+fi
+args+=(-isystem "$sdk/target/include")
+if "$link"; then
+    # Use the SDK's startup and linker layout; never FreeBSD or Linux CRT objects.
+    args+=(-fuse-ld=lld -nostdlib -pie -Wl,-m,elf_x86_64_fbsd -Wl,-e,__crt_start -Wl,--eh-frame-hdr -Wl,-z,max-page-size=0x4000
+           "-Wl,-T,$sdk/target/lib/main.script" -Wl,--hash-style=gnu
+           "-L$sdk/target/lib" "$sdk/target/lib/crt1.o")
+    libs=()
+    if "$cxx"; then libs+=(-lc++ -lc++abi -lunwind); fi
+    exec "$compiler" "${args[@]}" "$@" -Wl,--start-group "${libs[@]}" -lc -lkernel_web -lSceLibcInternal -lSceNet -Wl,--end-group
+fi
+exec "$compiler" "${args[@]}" "$@"

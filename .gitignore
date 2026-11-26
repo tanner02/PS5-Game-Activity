@@ -1,0 +1,4 @@
+/build*/
+*.elf
+/game-activity-data/
+__pycache__/
